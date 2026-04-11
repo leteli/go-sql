@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go-sql/courses"
+	"go-sql/users"
 	"strconv"
 
 	"encoding/json"
@@ -17,12 +18,6 @@ import (
 	"github.com/urfave/cli/v3"
 	_ "modernc.org/sqlite"
 )
-
-type User struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
-}
 
 func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -45,11 +40,17 @@ func main() {
 			createCourseCommand(db),
 			listCoursesCommand(db),
 			findCoursesByIDsCommand(db),
+			createUserCommand(db),
+			updateUserCommand(db),
+			findUserByIDCommand(db),
+			listUsersCommand(db),
+			deleteUserCommand(db),
 		},
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -158,6 +159,188 @@ func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
 			}
 
 			return printJSON(res)
+		},
+	}
+}
+
+func createUserCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "create-user",
+		Usage: "create a new user",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "email",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name: "name",
+			},
+			&cli.IntFlag{
+				Name: "age",
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			dto := users.CreateUserDTO{
+				Email: c.String("email"),
+			}
+			if c.IsSet("name") {
+				name := c.String("name")
+				dto.Name = &name
+			}
+			if c.IsSet("age") {
+				age := c.Int("age")
+				dto.Age = &age
+			}
+
+			res, err := users.CreateUser(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+			v := map[string]int{"ID": res}
+
+			return printJSON(v)
+		},
+	}
+}
+func updateUserCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "update-user",
+		Usage: "update user info",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name: "id",
+			},
+			&cli.StringFlag{
+				Name: "email",
+			},
+			&cli.StringFlag{
+				Name: "name",
+			},
+			&cli.IntFlag{
+				Name: "age",
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			dto := users.UpdateUserDTO{
+				ID: c.Int("id"),
+			}
+			if c.IsSet("email") {
+				email := c.String("email")
+				dto.Email = &email
+			}
+			if c.IsSet("name") {
+				name := c.String("name")
+				dto.Name = &name
+			}
+			if c.IsSet("age") {
+				age := c.Int("age")
+				dto.Age = &age
+			}
+
+			res, err := users.UpdateUser(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+			return printJSON(res)
+		},
+	}
+}
+func findUserByIDCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "find-user-by-id",
+		Usage: "find a user by id (integer value)",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:     "id",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			dto := users.FindUserByIDDTO{
+				ID: c.Int("id"),
+			}
+
+			res, err := users.FindUserByID(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+
+			return printJSON(res)
+		},
+	}
+}
+
+func listUsersCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "list-users",
+		Usage: "list users",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "order",
+				Value: "id_asc",
+			},
+			&cli.IntFlag{
+				Name:  "limit",
+				Value: 10,
+			},
+			&cli.IntFlag{
+				Name:  "offset",
+				Value: 0,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			dto := users.ListUsersDTO{
+				OrderKey: c.String("order"),
+				Limit:    c.Int("limit"),
+				Offset:   c.Int("offset"),
+			}
+
+			res, err := users.ListUsers(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+
+			return printJSON(res)
+		},
+	}
+}
+
+func deleteUserCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "delete-user",
+		Usage: "delete a user by id (integer value)",
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:     "id",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			dto := users.DeleteUserDTO{
+				ID: c.Int("id"),
+			}
+
+			count, err := users.DeleteUser(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+			v := map[string]int64{"Rows deleted": count}
+			return printJSON(v)
 		},
 	}
 }
