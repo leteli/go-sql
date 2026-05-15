@@ -124,6 +124,8 @@ func ListUsers(ctx context.Context, db *sql.DB, dto ListUsersDTO) ([]storage.Use
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+
 	var users []storage.User
 	for rows.Next() {
 		var u storage.User

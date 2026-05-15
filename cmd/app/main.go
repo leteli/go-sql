@@ -40,6 +40,9 @@ func main() {
 			createCourseCommand(db),
 			listCoursesCommand(db),
 			findCoursesByIDsCommand(db),
+			updateCoursePricesCommand(db),
+			listCoursesByMaxPricesCommand(db),
+			bulkWriteCoursesCommand(db),
 			createUserCommand(db),
 			updateUserCommand(db),
 			findUserByIDCommand(db),
@@ -145,7 +148,7 @@ func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
 			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 
-			ids, err := parseIDs(c.String("ids"))
+			ids, err := parseIntStrings(c.String("ids"))
 			if err != nil {
 				return err
 			}
@@ -159,6 +162,117 @@ func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
 			}
 
 			return printJSON(res)
+		},
+	}
+}
+
+func updateCoursePricesCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "update-course-prices",
+		Usage: "update course prices from JSON file",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "file",
+				Usage:    "path to JSON file",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			data, err := os.ReadFile(c.String("file"))
+			if err != nil {
+				return err
+			}
+
+			var prices []courses.CoursePrice
+			if err := json.Unmarshal(data, &prices); err != nil {
+				return err
+			}
+
+			dto := courses.UpdateCoursePricesDTO{
+				Prices: prices,
+			}
+
+			res, err := courses.UpdateCoursePrices(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+
+			return printJSON(res)
+		},
+	}
+}
+
+func listCoursesByMaxPricesCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "list-courses-by-max-prices",
+		Usage: "list courses by max pricess",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "prices",
+				Usage:    "comma-separated integer prices, e.g 100,1000,400",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			prices, err := parseIntStrings(c.String("prices"))
+			if err != nil {
+				return err
+			}
+
+			dto := courses.ListCoursesByMaxPricesDTO{
+				Prices: prices,
+			}
+
+			res, err := courses.ListCoursesByMaxPrices(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+
+			return printJSON(res)
+		},
+	}
+}
+
+func bulkWriteCoursesCommand(db *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "bulk-write-courses",
+		Usage: "create multiple courses from JSON file",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "file",
+				Usage:    "path to JSON file",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			data, err := os.ReadFile(c.String("file"))
+			if err != nil {
+				return err
+			}
+
+			var newCourses []courses.NewCourse
+			if err := json.Unmarshal(data, &newCourses); err != nil {
+				return err
+			}
+
+			dto := courses.BulkWriteCoursesDTO{
+				Courses: newCourses,
+			}
+
+			err = courses.BulkWriteCourses(ctx, db, dto)
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 }
@@ -345,7 +459,7 @@ func deleteUserCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func parseIDs(raw string) ([]int, error) {
+func parseIntStrings(raw string) ([]int, error) {
 	parts := strings.Split(raw, ",")
 	ids := make([]int, 0, len(parts))
 

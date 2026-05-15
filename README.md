@@ -1,0 +1,1 @@
+Educational Go project for learning how to work with SQL in Go

@@ -3,9 +3,9 @@ package courses
 import "errors"
 
 type CreateCourseDTO struct {
-	Slug  string
-	Title string
-	Price int
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+	Price int    `json:"price"`
 }
 
 func (dto CreateCourseDTO) Validate() error {
@@ -44,6 +44,46 @@ type FindCoursesByIDsDTO struct {
 func (dto FindCoursesByIDsDTO) Validate() error {
 	if len(dto.IDs) == 0 {
 		return errors.New("ids are required")
+	}
+	return nil
+}
+
+type CoursePrice struct {
+	ID    int `json:"id"`
+	Price int `json:"price"`
+}
+
+type UpdateCoursePricesDTO struct {
+	Prices []CoursePrice
+}
+
+func (dto UpdateCoursePricesDTO) Validate() error {
+	if len(dto.Prices) == 0 {
+		return errors.New("course prices are required")
+	}
+	return nil
+}
+
+type ListCoursesByMaxPricesDTO struct {
+	Prices []int
+}
+
+func (dto ListCoursesByMaxPricesDTO) Validate() error {
+	if len(dto.Prices) == 0 {
+		return errors.New("course prices are required")
+	}
+	return nil
+}
+
+type NewCourse = CreateCourseDTO
+
+type BulkWriteCoursesDTO struct {
+	Courses []NewCourse
+}
+
+func (dto BulkWriteCoursesDTO) Validate() error {
+	if len(dto.Courses) == 0 {
+		return errors.New("courses data is required")
 	}
 	return nil
 }
