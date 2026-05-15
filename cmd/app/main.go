@@ -268,11 +268,12 @@ func bulkWriteCoursesCommand(db *sql.DB) *cli.Command {
 				Courses: newCourses,
 			}
 
-			err = courses.BulkWriteCourses(ctx, db, dto)
+			res, err := courses.BulkWriteCourses(ctx, db, dto)
 			if err != nil {
-				return err
+				_ = printJSON(res)
+				return fmt.Errorf("bulk write courses failed: %w", err)
 			}
-			return nil
+			return printJSON(res)
 		},
 	}
 }

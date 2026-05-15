@@ -87,3 +87,7 @@ func (dto BulkWriteCoursesDTO) Validate() error {
 	}
 	return nil
 }
+
+type OpStatus struct {
+	Status string `json:"status"`
+}

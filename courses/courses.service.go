@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go-sql/internal/storage"
+	"go-sql/utils"
 	"strings"
 )
 
@@ -112,28 +113,35 @@ func UpdateCoursePrices(ctx context.Context, db *sql.DB, dto UpdateCoursePricesD
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
-	stmt, err := db.PrepareContext(ctx, `
+	courses := make([]storage.Course, 0, len(dto.Prices))
+
+	update := func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `
 		UPDATE courses
 		SET price = ?
 		WHERE id = ?
 		RETURNING id, slug, title, price
 	`)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-	var courses []storage.Course
-
-	for _, p := range dto.Prices {
-		var c storage.Course
-		err := stmt.QueryRowContext(ctx, p.Price, p.ID).Scan(&c.ID, &c.Slug, &c.Title, &c.Price)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, fmt.Errorf("%w; course id=%d", ErrNotFound, p.ID)
-			}
-			return nil, err
+			return err
 		}
-		courses = append(courses, c)
+		defer stmt.Close()
+
+		for _, p := range dto.Prices {
+			var c storage.Course
+			err := stmt.QueryRowContext(ctx, p.Price, p.ID).Scan(&c.ID, &c.Slug, &c.Title, &c.Price)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("%w; course id=%d", ErrNotFound, p.ID)
+				}
+				return err
+			}
+			courses = append(courses, c)
+		}
+		return nil
+	}
+	if err := utils.WithTx(ctx, db, update); err != nil {
+		return nil, fmt.Errorf("transaction error %w", err)
 	}
 	return courses, nil
 }
@@ -176,23 +184,30 @@ func ListCoursesByMaxPrices(ctx context.Context, db *sql.DB, dto ListCoursesByMa
 	return coursesBelowLimit, nil
 }
 
-func BulkWriteCourses(ctx context.Context, db *sql.DB, dto BulkWriteCoursesDTO) error {
+func BulkWriteCourses(ctx context.Context, db *sql.DB, dto BulkWriteCoursesDTO) (OpStatus, error) {
 	if err := dto.Validate(); err != nil {
-		return err
+		return OpStatus{Status: "failed"}, err
 	}
-	stmt, err := db.PrepareContext(ctx, `
-		INSERT INTO courses (slug, title, price)
-		VALUES (?, ?, ?)
-	`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	for _, c := range dto.Courses {
-		_, err := stmt.ExecContext(ctx, c.Slug, c.Title, c.Price)
+	bulkWrite := func(tx *sql.Tx) error {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO courses (slug, title, price)
+			VALUES (?, ?, ?)
+		`)
 		if err != nil {
 			return err
 		}
+		defer stmt.Close()
+		for _, c := range dto.Courses {
+			_, err := stmt.ExecContext(ctx, c.Slug, c.Title, c.Price)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	return nil
+	err := utils.WithTx(ctx, db, bulkWrite)
+	if err != nil {
+		return OpStatus{Status: "failed"}, fmt.Errorf("transaction error %w", err)
+	}
+	return OpStatus{Status: "success"}, nil
 }
