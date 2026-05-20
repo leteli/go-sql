@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	coursesdb "go-sql/internal/db/courses"
 	"go-sql/internal/storage"
 	"go-sql/utils"
 	"strings"
@@ -12,7 +13,19 @@ import (
 
 var ErrNotFound = errors.New("course not found")
 
-func CreateCourse(ctx context.Context, db *sql.DB, dto CreateCourseDTO) (int, error) {
+func CreateCourse(ctx context.Context, q coursesdb.Querier, dto CreateCourseDTO) (int64, error) {
+	if err := dto.Validate(); err != nil {
+		return 0, err
+	}
+	params := coursesdb.CreateCourseParams{
+		Slug:  dto.Slug,
+		Title: dto.Title,
+		Price: dto.Price,
+	}
+	return q.CreateCourse(ctx, params)
+}
+
+func CreateCourseRaw(ctx context.Context, db *sql.DB, dto CreateCourseDTO) (int, error) {
 	if err := dto.Validate(); err != nil {
 		return 0, err
 	}
@@ -32,20 +45,32 @@ func CreateCourse(ctx context.Context, db *sql.DB, dto CreateCourseDTO) (int, er
 	return int(id), nil
 }
 
-var allowedOrders = map[string]string{
+func ListCourses(ctx context.Context, q coursesdb.Querier, dto ListCoursesDTO) ([]coursesdb.Course, error) {
+	if err := dto.Validate(); err != nil {
+		return nil, err
+	}
+	params := coursesdb.ListCoursesParams{
+		// OrderBy: dto.OrderKey, // NB: use bare sql for dynamic ORDER BY
+		Limit:  dto.Limit,
+		Offset: dto.Offset,
+	}
+	return q.ListCourses(ctx, params)
+}
+
+var allowedOrdersRaw = map[string]string{
 	"id_asc":     "id ASC",
 	"title_asc":  "title ASC",
 	"price_asc":  "price ASC",
 	"price_desc": "price DESC",
 }
 
-func ListCourses(ctx context.Context, db *sql.DB, dto ListCoursesDTO) ([]storage.Course, error) {
+func ListCoursesRaw(ctx context.Context, db *sql.DB, dto ListCoursesDTO) ([]storage.Course, error) {
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
-	order, ok := allowedOrders[dto.OrderKey]
+	order, ok := allowedOrdersRaw[dto.OrderKey]
 	if !ok {
-		order = allowedOrders["id_asc"]
+		order = allowedOrdersRaw["id_asc"]
 	}
 	query := fmt.Sprintf(
 		`SELECT id, slug, title, price FROM courses ORDER BY %s LIMIT %d OFFSET %d`,
@@ -73,7 +98,14 @@ func ListCourses(ctx context.Context, db *sql.DB, dto ListCoursesDTO) ([]storage
 	return courses, nil
 }
 
-func FindCoursesByIDs(ctx context.Context, db *sql.DB, dto FindCoursesByIDsDTO) ([]storage.Course, error) {
+func FindCoursesByIDs(ctx context.Context, q coursesdb.Querier, dto FindCoursesByIDsDTO) ([]coursesdb.Course, error) {
+	if err := dto.Validate(); err != nil {
+		return nil, err
+	}
+	return q.FindCoursesByIDs(ctx, dto.IDs)
+}
+
+func FindCoursesByIDsRaw(ctx context.Context, db *sql.DB, dto FindCoursesByIDsDTO) ([]storage.Course, error) {
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
@@ -109,7 +141,43 @@ func FindCoursesByIDs(ctx context.Context, db *sql.DB, dto FindCoursesByIDsDTO) 
 	return courses, nil
 }
 
-func UpdateCoursePrices(ctx context.Context, db *sql.DB, dto UpdateCoursePricesDTO) ([]storage.Course, error) {
+func UpdateCoursePrices(ctx context.Context, db *sql.DB, dto UpdateCoursePricesDTO) ([]coursesdb.Course, error) {
+	if err := dto.Validate(); err != nil {
+		return nil, err
+	}
+	courses := make([]coursesdb.Course, 0, len(dto.Prices))
+	update := func(tx *sql.Tx) error {
+		coursesPQ, err := coursesdb.Prepare(ctx, tx)
+		if err != nil {
+			return err
+		}
+		defer coursesPQ.Close()
+
+		for _, p := range dto.Prices {
+
+			course, err := coursesPQ.UpdateCoursePrice(
+				ctx,
+				coursesdb.UpdateCoursePriceParams{
+					ID:    p.ID,
+					Price: p.Price,
+				})
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("%w; course id=%d", ErrNotFound, p.ID)
+				}
+				return err
+			}
+			courses = append(courses, course)
+		}
+		return nil
+	}
+	if err := utils.WithTx(ctx, db, update); err != nil {
+		return nil, fmt.Errorf("transaction error %w", err)
+	}
+	return courses, nil
+}
+
+func UpdateCoursePricesRaw(ctx context.Context, db *sql.DB, dto UpdateCoursePricesDTO) ([]storage.Course, error) {
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
@@ -146,7 +214,22 @@ func UpdateCoursePrices(ctx context.Context, db *sql.DB, dto UpdateCoursePricesD
 	return courses, nil
 }
 
-func ListCoursesByMaxPrices(ctx context.Context, db *sql.DB, dto ListCoursesByMaxPricesDTO) (map[int][]storage.Course, error) {
+func ListCoursesByMaxPrices(ctx context.Context, q coursesdb.Querier, dto ListCoursesByMaxPricesDTO) (map[int64][]coursesdb.Course, error) {
+	if err := dto.Validate(); err != nil {
+		return nil, err
+	}
+	var coursesBelowLimit = make(map[int64][]coursesdb.Course, len(dto.Prices))
+	for _, p := range dto.Prices {
+		courses, err := q.ListCoursesByMaxPrice(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		coursesBelowLimit[p] = courses
+	}
+	return coursesBelowLimit, nil
+}
+
+func ListCoursesByMaxPricesRaw(ctx context.Context, db *sql.DB, dto ListCoursesByMaxPricesDTO) (map[int64][]storage.Course, error) {
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
@@ -159,7 +242,7 @@ func ListCoursesByMaxPrices(ctx context.Context, db *sql.DB, dto ListCoursesByMa
 		return nil, err
 	}
 	defer stmt.Close()
-	var coursesBelowLimit = make(map[int][]storage.Course, len(dto.Prices))
+	var coursesBelowLimit = make(map[int64][]storage.Course, len(dto.Prices))
 
 	for _, p := range dto.Prices {
 		rows, err := stmt.QueryContext(ctx, p)
@@ -185,6 +268,37 @@ func ListCoursesByMaxPrices(ctx context.Context, db *sql.DB, dto ListCoursesByMa
 }
 
 func BulkWriteCourses(ctx context.Context, db *sql.DB, dto BulkWriteCoursesDTO) (OpStatus, error) {
+	if err := dto.Validate(); err != nil {
+		return OpStatus{Status: "failed"}, err
+	}
+	bulkWrite := func(tx *sql.Tx) error {
+		coursesPQ, err := coursesdb.Prepare(ctx, tx)
+		if err != nil {
+			return err
+		}
+		defer coursesPQ.Close()
+
+		for _, c := range dto.Courses {
+			params := coursesdb.CreateCourseParams{
+				Slug:  c.Slug,
+				Title: c.Title,
+				Price: c.Price,
+			}
+			if _, err := coursesPQ.CreateCourse(ctx, params); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+	err := utils.WithTx(ctx, db, bulkWrite)
+	if err != nil {
+		return OpStatus{Status: "failed"}, fmt.Errorf("transaction error %w", err)
+	}
+	return OpStatus{Status: "success"}, nil
+}
+
+func BulkWriteCoursesRaw(ctx context.Context, db *sql.DB, dto BulkWriteCoursesDTO) (OpStatus, error) {
 	if err := dto.Validate(); err != nil {
 		return OpStatus{Status: "failed"}, err
 	}

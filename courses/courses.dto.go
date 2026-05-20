@@ -5,7 +5,7 @@ import "errors"
 type CreateCourseDTO struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
-	Price int    `json:"price"`
+	Price int64  `json:"price"`
 }
 
 func (dto CreateCourseDTO) Validate() error {
@@ -23,8 +23,8 @@ func (dto CreateCourseDTO) Validate() error {
 
 type ListCoursesDTO struct {
 	OrderKey string
-	Limit    int
-	Offset   int
+	Limit    int64
+	Offset   int64
 }
 
 func (dto ListCoursesDTO) Validate() error {
@@ -38,7 +38,7 @@ func (dto ListCoursesDTO) Validate() error {
 }
 
 type FindCoursesByIDsDTO struct {
-	IDs []int
+	IDs []int64
 }
 
 func (dto FindCoursesByIDsDTO) Validate() error {
@@ -49,8 +49,8 @@ func (dto FindCoursesByIDsDTO) Validate() error {
 }
 
 type CoursePrice struct {
-	ID    int `json:"id"`
-	Price int `json:"price"`
+	ID    int64 `json:"id"`
+	Price int64 `json:"price"`
 }
 
 type UpdateCoursePricesDTO struct {
@@ -65,7 +65,7 @@ func (dto UpdateCoursePricesDTO) Validate() error {
 }
 
 type ListCoursesByMaxPricesDTO struct {
-	Prices []int
+	Prices []int64
 }
 
 func (dto ListCoursesByMaxPricesDTO) Validate() error {

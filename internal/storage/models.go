@@ -5,16 +5,16 @@ import (
 )
 
 type Course struct {
-	ID    int    `json:"id"`
+	ID    int64  `json:"id"`
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
-	Price int    `json:"price"`
+	Price int64  `json:"price"`
 }
 
 type User struct {
-	ID        int       `json:"id"`
+	ID        int64     `json:"id"`
 	Email     string    `json:"email"`
 	Name      *string   `json:"name,omitempty"`
-	Age       *int      `json:"age,omitempty"`
+	Age       *int64    `json:"age,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }

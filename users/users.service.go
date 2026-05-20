@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	usersdb "go-sql/internal/db/users"
 	"go-sql/internal/storage"
 	"strings"
 )
@@ -18,7 +19,23 @@ var allowedOrders = map[string]string{
 
 var ErrNotFound = errors.New("user not found")
 
-func CreateUser(ctx context.Context, db *sql.DB, dto CreateUserDTO) (int, error) {
+func CreateUser(ctx context.Context, q usersdb.Querier, dto CreateUserDTO) (int64, error) {
+	if err := dto.Validate(); err != nil {
+		return 0, err
+	}
+	params := usersdb.CreateUserParams{
+		Email: dto.Email,
+	}
+	if dto.Name != nil {
+		params.Name = sql.NullString{String: *dto.Name, Valid: true}
+	}
+	if dto.Age != nil {
+		params.Age = sql.NullInt64{Int64: *dto.Age, Valid: true}
+	}
+	return q.CreateUser(ctx, params)
+}
+
+func CreateUserRaw(ctx context.Context, db *sql.DB, dto CreateUserDTO) (int64, error) {
 	if err := dto.Validate(); err != nil {
 		return 0, err
 	}
@@ -35,10 +52,42 @@ func CreateUser(ctx context.Context, db *sql.DB, dto CreateUserDTO) (int, error)
 	if err != nil {
 		return 0, err
 	}
-	return int(id), nil
+	return id, nil
 }
 
-func UpdateUser(ctx context.Context, db *sql.DB, dto UpdateUserDTO) (storage.User, error) {
+func UpdateUser(ctx context.Context, q usersdb.Querier, dto UpdateUserDTO) (storage.User, error) {
+	if err := dto.Validate(); err != nil {
+		return storage.User{}, err
+	}
+	params := usersdb.UpdateUserParams{
+		ID: dto.ID,
+	}
+	if dto.Email != nil {
+		params.Email = sql.NullString{
+			String: *dto.Email,
+			Valid:  true,
+		}
+	}
+	if dto.Name != nil {
+		params.Name = sql.NullString{
+			String: *dto.Name,
+			Valid:  true,
+		}
+	}
+	if dto.Age != nil {
+		params.Age = sql.NullInt64{
+			Int64: *dto.Age,
+			Valid: true,
+		}
+	}
+	u, err := q.UpdateUser(ctx, params)
+	if err != nil {
+		return storage.User{}, err
+	}
+	return toUserResponse(u), nil
+}
+
+func UpdateUserRaw(ctx context.Context, db *sql.DB, dto UpdateUserDTO) (storage.User, error) {
 	if err := dto.Validate(); err != nil {
 		return storage.User{}, err
 	}
@@ -79,7 +128,18 @@ func UpdateUser(ctx context.Context, db *sql.DB, dto UpdateUserDTO) (storage.Use
 	return u, nil
 }
 
-func FindUserByID(ctx context.Context, db *sql.DB, dto FindUserByIDDTO) (storage.User, error) {
+func FindUserByID(ctx context.Context, q usersdb.Querier, dto FindUserByIDDTO) (storage.User, error) {
+	if err := dto.Validate(); err != nil {
+		return storage.User{}, err
+	}
+	u, err := q.FindUserByID(ctx, dto.ID)
+	if err != nil {
+		return storage.User{}, err
+	}
+	return toUserResponse(u), nil
+}
+
+func FindUserByIDRaw(ctx context.Context, db *sql.DB, dto FindUserByIDDTO) (storage.User, error) {
 	if err := dto.Validate(); err != nil {
 		return storage.User{}, err
 	}
@@ -100,7 +160,26 @@ func FindUserByID(ctx context.Context, db *sql.DB, dto FindUserByIDDTO) (storage
 	return u, nil
 }
 
-func ListUsers(ctx context.Context, db *sql.DB, dto ListUsersDTO) ([]storage.User, error) {
+func ListUsers(ctx context.Context, q usersdb.Querier, dto ListUsersDTO) ([]storage.User, error) {
+	if err := dto.Validate(); err != nil {
+		return nil, err
+	}
+	params := usersdb.ListUsersParams{
+		Limit:  dto.Limit,
+		Offset: dto.Offset,
+	}
+	dbUsers, err := q.ListUsers(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	users := make([]storage.User, len(dbUsers))
+	for i, u := range dbUsers {
+		users[i] = toUserResponse(u)
+	}
+	return users, nil
+}
+
+func ListUsersRaw(ctx context.Context, db *sql.DB, dto ListUsersDTO) ([]storage.User, error) {
 	if err := dto.Validate(); err != nil {
 		return nil, err
 	}
@@ -140,7 +219,14 @@ func ListUsers(ctx context.Context, db *sql.DB, dto ListUsersDTO) ([]storage.Use
 	return users, nil
 }
 
-func DeleteUser(ctx context.Context, db *sql.DB, dto DeleteUserDTO) (int64, error) {
+func DeleteUser(ctx context.Context, q usersdb.Querier, dto DeleteUserDTO) error {
+	if err := dto.Validate(); err != nil {
+		return err
+	}
+	return q.DeleteUser(ctx, dto.ID)
+}
+
+func DeleteUserRaw(ctx context.Context, db *sql.DB, dto DeleteUserDTO) (int64, error) {
 	if err := dto.Validate(); err != nil {
 		return 0, err
 	}
@@ -157,4 +243,19 @@ func DeleteUser(ctx context.Context, db *sql.DB, dto DeleteUserDTO) (int64, erro
 		return 0, sql.ErrNoRows
 	}
 	return rCount, nil
+}
+
+func toUserResponse(u usersdb.User) storage.User {
+	r := storage.User{
+		ID:        u.ID,
+		Email:     u.Email,
+		CreatedAt: u.CreatedAt.Time,
+	}
+	if u.Name.Valid {
+		r.Name = &u.Name.String
+	}
+	if u.Age.Valid {
+		r.Age = &u.Age.Int64
+	}
+	return r
 }

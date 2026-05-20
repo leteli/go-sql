@@ -5,7 +5,7 @@ import "errors"
 type CreateUserDTO struct {
 	Email string
 	Name  *string
-	Age   *int
+	Age   *int64
 }
 
 func (dto CreateUserDTO) Validate() error {
@@ -16,10 +16,10 @@ func (dto CreateUserDTO) Validate() error {
 }
 
 type UpdateUserDTO struct {
-	ID    int
+	ID    int64
 	Email *string
 	Name  *string
-	Age   *int
+	Age   *int64
 }
 
 func (dto UpdateUserDTO) Validate() error {
@@ -33,7 +33,7 @@ func (dto UpdateUserDTO) Validate() error {
 }
 
 type FindUserByIDDTO struct {
-	ID int
+	ID int64
 }
 
 func (dto FindUserByIDDTO) Validate() error {
@@ -45,8 +45,8 @@ func (dto FindUserByIDDTO) Validate() error {
 
 type ListUsersDTO struct {
 	OrderKey string
-	Limit    int
-	Offset   int
+	Limit    int64
+	Offset   int64
 }
 
 func (dto ListUsersDTO) Validate() error {
@@ -60,7 +60,7 @@ func (dto ListUsersDTO) Validate() error {
 }
 
 type DeleteUserDTO struct {
-	ID int
+	ID int64
 }
 
 func (dto DeleteUserDTO) Validate() error {

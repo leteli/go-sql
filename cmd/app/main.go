@@ -15,6 +15,9 @@ import (
 
 	"encoding/json"
 
+	coursesdb "go-sql/internal/db/courses"
+	usersdb "go-sql/internal/db/users"
+
 	"github.com/urfave/cli/v3"
 	_ "modernc.org/sqlite"
 )
@@ -23,31 +26,38 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	db, err := sql.Open("sqlite", "file:data.db?_foreign_keys=on&_busy_timeout=5000")
+	conn, err := sql.Open("sqlite", "file:data.db?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer conn.Close()
 
-	if err := db.PingContext(ctx); err != nil {
+	if err := conn.PingContext(ctx); err != nil {
 		log.Fatalf("ping db: %v", err)
 	}
+	usersQ := usersdb.New(conn)
+	coursesQ := coursesdb.New(conn)
+	coursesPQ, err := coursesdb.Prepare(ctx, conn)
+	if err != nil {
+		log.Fatalf("cannot use prepared statements: %v", err)
+	}
+	defer coursesPQ.Close()
 
 	cmd := &cli.Command{
 		Name:  "db-tool",
 		Usage: "CLI for testing course DB operations",
 		Commands: []*cli.Command{
-			createCourseCommand(db),
-			listCoursesCommand(db),
-			findCoursesByIDsCommand(db),
-			updateCoursePricesCommand(db),
-			listCoursesByMaxPricesCommand(db),
-			bulkWriteCoursesCommand(db),
-			createUserCommand(db),
-			updateUserCommand(db),
-			findUserByIDCommand(db),
-			listUsersCommand(db),
-			deleteUserCommand(db),
+			createCourseCommand(coursesQ),
+			listCoursesCommand(coursesQ),
+			findCoursesByIDsCommand(coursesQ),
+			updateCoursePricesCommand(conn),
+			listCoursesByMaxPricesCommand(coursesPQ),
+			bulkWriteCoursesCommand(conn),
+			createUserCommand(usersQ),
+			updateUserCommand(usersQ),
+			findUserByIDCommand(usersQ),
+			listUsersCommand(usersQ),
+			deleteUserCommand(usersQ),
 		},
 	}
 
@@ -57,7 +67,7 @@ func main() {
 	}
 }
 
-func createCourseCommand(db *sql.DB) *cli.Command {
+func createCourseCommand(q coursesdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "create-course",
 		Usage: "create a new course",
@@ -70,7 +80,7 @@ func createCourseCommand(db *sql.DB) *cli.Command {
 				Name:     "title",
 				Required: true,
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:     "price",
 				Required: true,
 			},
@@ -82,10 +92,9 @@ func createCourseCommand(db *sql.DB) *cli.Command {
 			dto := courses.CreateCourseDTO{
 				Slug:  c.String("slug"),
 				Title: c.String("title"),
-				Price: c.Int("price"),
+				Price: c.Int64("price"),
 			}
-
-			res, err := courses.CreateCourse(ctx, db, dto)
+			res, err := courses.CreateCourse(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -95,20 +104,20 @@ func createCourseCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func listCoursesCommand(db *sql.DB) *cli.Command {
+func listCoursesCommand(q coursesdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "list-courses",
 		Usage: "list courses",
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "order",
-				Value: "id_asc",
-			},
-			&cli.IntFlag{
+			// &cli.StringFlag{
+			// 	Name:  "order",
+			// 	Value: "id_asc",
+			// },
+			&cli.Int64Flag{
 				Name:  "limit",
 				Value: 10,
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:  "offset",
 				Value: 0,
 			},
@@ -118,12 +127,12 @@ func listCoursesCommand(db *sql.DB) *cli.Command {
 			defer cancel()
 
 			dto := courses.ListCoursesDTO{
-				OrderKey: c.String("order"),
-				Limit:    c.Int("limit"),
-				Offset:   c.Int("offset"),
+				// OrderKey: c.String("order"),
+				Limit:  c.Int64("limit"),
+				Offset: c.Int64("offset"),
 			}
 
-			res, err := courses.ListCourses(ctx, db, dto)
+			res, err := courses.ListCourses(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -133,7 +142,7 @@ func listCoursesCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
+func findCoursesByIDsCommand(q coursesdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "find-courses-by-ids",
 		Usage: "find courses by comma-separated ids",
@@ -148,7 +157,7 @@ func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
 			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 
-			ids, err := parseIntStrings(c.String("ids"))
+			ids, err := parseInt64Strings(c.String("ids"))
 			if err != nil {
 				return err
 			}
@@ -156,7 +165,7 @@ func findCoursesByIDsCommand(db *sql.DB) *cli.Command {
 				IDs: ids,
 			}
 
-			res, err := courses.FindCoursesByIDs(ctx, db, dto)
+			res, err := courses.FindCoursesByIDs(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -205,7 +214,7 @@ func updateCoursePricesCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func listCoursesByMaxPricesCommand(db *sql.DB) *cli.Command {
+func listCoursesByMaxPricesCommand(q coursesdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "list-courses-by-max-prices",
 		Usage: "list courses by max pricess",
@@ -220,7 +229,7 @@ func listCoursesByMaxPricesCommand(db *sql.DB) *cli.Command {
 			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 
-			prices, err := parseIntStrings(c.String("prices"))
+			prices, err := parseInt64Strings(c.String("prices"))
 			if err != nil {
 				return err
 			}
@@ -229,7 +238,7 @@ func listCoursesByMaxPricesCommand(db *sql.DB) *cli.Command {
 				Prices: prices,
 			}
 
-			res, err := courses.ListCoursesByMaxPrices(ctx, db, dto)
+			res, err := courses.ListCoursesByMaxPrices(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -278,7 +287,7 @@ func bulkWriteCoursesCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func createUserCommand(db *sql.DB) *cli.Command {
+func createUserCommand(q usersdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "create-user",
 		Usage: "create a new user",
@@ -290,7 +299,7 @@ func createUserCommand(db *sql.DB) *cli.Command {
 			&cli.StringFlag{
 				Name: "name",
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name: "age",
 			},
 		},
@@ -306,26 +315,27 @@ func createUserCommand(db *sql.DB) *cli.Command {
 				dto.Name = &name
 			}
 			if c.IsSet("age") {
-				age := c.Int("age")
+				age := c.Int64("age")
 				dto.Age = &age
 			}
 
-			res, err := users.CreateUser(ctx, db, dto)
+			res, err := users.CreateUser(ctx, q, dto)
 			if err != nil {
 				return err
 			}
-			v := map[string]int{"ID": res}
+			v := map[string]int64{"ID": res}
 
 			return printJSON(v)
 		},
 	}
 }
-func updateUserCommand(db *sql.DB) *cli.Command {
+
+func updateUserCommand(q usersdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "update-user",
 		Usage: "update user info",
 		Flags: []cli.Flag{
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name: "id",
 			},
 			&cli.StringFlag{
@@ -334,7 +344,7 @@ func updateUserCommand(db *sql.DB) *cli.Command {
 			&cli.StringFlag{
 				Name: "name",
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name: "age",
 			},
 		},
@@ -343,7 +353,7 @@ func updateUserCommand(db *sql.DB) *cli.Command {
 			defer cancel()
 
 			dto := users.UpdateUserDTO{
-				ID: c.Int("id"),
+				ID: c.Int64("id"),
 			}
 			if c.IsSet("email") {
 				email := c.String("email")
@@ -354,11 +364,11 @@ func updateUserCommand(db *sql.DB) *cli.Command {
 				dto.Name = &name
 			}
 			if c.IsSet("age") {
-				age := c.Int("age")
+				age := c.Int64("age")
 				dto.Age = &age
 			}
 
-			res, err := users.UpdateUser(ctx, db, dto)
+			res, err := users.UpdateUser(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -366,12 +376,12 @@ func updateUserCommand(db *sql.DB) *cli.Command {
 		},
 	}
 }
-func findUserByIDCommand(db *sql.DB) *cli.Command {
+func findUserByIDCommand(q usersdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "find-user-by-id",
 		Usage: "find a user by id (integer value)",
 		Flags: []cli.Flag{
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:     "id",
 				Required: true,
 			},
@@ -381,10 +391,10 @@ func findUserByIDCommand(db *sql.DB) *cli.Command {
 			defer cancel()
 
 			dto := users.FindUserByIDDTO{
-				ID: c.Int("id"),
+				ID: c.Int64("id"),
 			}
 
-			res, err := users.FindUserByID(ctx, db, dto)
+			res, err := users.FindUserByID(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -394,7 +404,7 @@ func findUserByIDCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func listUsersCommand(db *sql.DB) *cli.Command {
+func listUsersCommand(q usersdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "list-users",
 		Usage: "list users",
@@ -403,11 +413,11 @@ func listUsersCommand(db *sql.DB) *cli.Command {
 				Name:  "order",
 				Value: "id_asc",
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:  "limit",
 				Value: 10,
 			},
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:  "offset",
 				Value: 0,
 			},
@@ -418,11 +428,11 @@ func listUsersCommand(db *sql.DB) *cli.Command {
 
 			dto := users.ListUsersDTO{
 				OrderKey: c.String("order"),
-				Limit:    c.Int("limit"),
-				Offset:   c.Int("offset"),
+				Limit:    c.Int64("limit"),
+				Offset:   c.Int64("offset"),
 			}
 
-			res, err := users.ListUsers(ctx, db, dto)
+			res, err := users.ListUsers(ctx, q, dto)
 			if err != nil {
 				return err
 			}
@@ -432,12 +442,12 @@ func listUsersCommand(db *sql.DB) *cli.Command {
 	}
 }
 
-func deleteUserCommand(db *sql.DB) *cli.Command {
+func deleteUserCommand(q usersdb.Querier) *cli.Command {
 	return &cli.Command{
 		Name:  "delete-user",
 		Usage: "delete a user by id (integer value)",
 		Flags: []cli.Flag{
-			&cli.IntFlag{
+			&cli.Int64Flag{
 				Name:     "id",
 				Required: true,
 			},
@@ -447,22 +457,21 @@ func deleteUserCommand(db *sql.DB) *cli.Command {
 			defer cancel()
 
 			dto := users.DeleteUserDTO{
-				ID: c.Int("id"),
+				ID: c.Int64("id"),
 			}
 
-			count, err := users.DeleteUser(ctx, db, dto)
+			err := users.DeleteUser(ctx, q, dto)
 			if err != nil {
 				return err
 			}
-			v := map[string]int64{"Rows deleted": count}
-			return printJSON(v)
+			return nil
 		},
 	}
 }
 
-func parseIntStrings(raw string) ([]int, error) {
+func parseInt64Strings(raw string) ([]int64, error) {
 	parts := strings.Split(raw, ",")
-	ids := make([]int, 0, len(parts))
+	ids := make([]int64, 0, len(parts))
 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -475,7 +484,7 @@ func parseIntStrings(raw string) ([]int, error) {
 			return nil, fmt.Errorf("invalid id %q: %w", part, err)
 		}
 
-		ids = append(ids, id)
+		ids = append(ids, int64(id))
 	}
 
 	if len(ids) == 0 {
