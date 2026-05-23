@@ -9,13 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"go-sql/course_members"
 	"go-sql/courses"
+	"go-sql/orders"
 	"go-sql/users"
 	"strconv"
 
 	"encoding/json"
 
+	coursemembersdb "go-sql/internal/db/course_members"
 	coursesdb "go-sql/internal/db/courses"
+	ordersdb "go-sql/internal/db/orders"
 	usersdb "go-sql/internal/db/users"
 
 	"github.com/urfave/cli/v3"
@@ -42,6 +46,8 @@ func main() {
 		log.Fatalf("cannot use prepared statements: %v", err)
 	}
 	defer coursesPQ.Close()
+	ordersQ := ordersdb.New(conn)
+	cmQ := coursemembersdb.New(conn)
 
 	cmd := &cli.Command{
 		Name:  "db-tool",
@@ -58,6 +64,11 @@ func main() {
 			findUserByIDCommand(usersQ),
 			listUsersCommand(usersQ),
 			deleteUserCommand(usersQ),
+			getUserByOrderIDCommand(ordersQ),
+			listOrdersCommand(ordersQ),
+			getUserByCourseMemberIDCommand(cmQ),
+			getCourseWithMembersCommand(cmQ),
+			joinCourseCommand(conn),
 		},
 	}
 
@@ -465,6 +476,143 @@ func deleteUserCommand(q usersdb.Querier) *cli.Command {
 				return err
 			}
 			return nil
+		},
+	}
+}
+
+func getUserByOrderIDCommand(q ordersdb.Querier) *cli.Command {
+	return &cli.Command{
+		Name:  "get-user-by-order-id",
+		Usage: "get a user by order id (integer value)",
+		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:     "id",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			res, err := orders.GetUserByOrderID(ctx, q, orders.GetUserByOrderIDDTO{
+				ID: c.Int64("id"),
+			})
+			if err != nil {
+				return err
+			}
+			return printJSON(res)
+		},
+	}
+}
+
+func listOrdersCommand(q ordersdb.Querier) *cli.Command {
+	return &cli.Command{
+		Name:  "list-orders",
+		Usage: "",
+		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:  "limit",
+				Value: 10,
+			},
+			&cli.Int64Flag{
+				Name:  "offset",
+				Value: 0,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			res, err := orders.ListOrders(ctx, q, orders.ListOrdersDTO{
+				Limit:  c.Int64("limit"),
+				Offset: c.Int64("offset"),
+			})
+
+			if err != nil {
+				return err
+			}
+			return printJSON(res)
+		},
+	}
+}
+
+func getUserByCourseMemberIDCommand(q coursemembersdb.Querier) *cli.Command {
+	return &cli.Command{
+		Name:  "get-user-by-course-member-id",
+		Usage: "get a user by course member id (integer value)",
+		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:     "id",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			res, err := course_members.GetUserByCourseMemberID(ctx, q, course_members.GetUserByCourseMemberIDDTO{
+				ID: c.Int64("id"),
+			})
+			if err != nil {
+				return err
+			}
+			return printJSON(res)
+		},
+	}
+}
+
+func getCourseWithMembersCommand(q coursemembersdb.Querier) *cli.Command {
+	return &cli.Command{
+		Name:  "get-course-with-members",
+		Usage: "get a course with its members by course id",
+		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:     "id",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+
+			res, err := course_members.GetCourseWithMembers(ctx, q, course_members.GetCourseWithMembersDTO{
+				ID: c.Int64("id"),
+			})
+			if err != nil {
+				return err
+			}
+			return printJSON(res)
+		},
+	}
+}
+
+func joinCourseCommand(conn *sql.DB) *cli.Command {
+	return &cli.Command{
+		Name:  "join-course",
+		Usage: "add a user to a course",
+		Flags: []cli.Flag{
+			&cli.Int64Flag{
+				Name:     "userId",
+				Required: true,
+			},
+			&cli.Int64Flag{
+				Name:     "courseId",
+				Required: true,
+			},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+
+			err := course_members.JoinCourse(ctx, conn, course_members.JoinCourseDTO{
+				UserID:   c.Int64("userId"),
+				CourseID: c.Int64("courseId"),
+			})
+			if err != nil {
+				_ = printJSON(courses.OpStatus{Status: "error"})
+				return err
+			}
+			return printJSON(courses.OpStatus{Status: "joined"}) // TODO: move to a general types file
 		},
 	}
 }

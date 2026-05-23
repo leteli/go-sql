@@ -18,3 +18,18 @@ type User struct {
 	Age       *int64    `json:"age,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type Order struct {
+	ID          int64     `json:"id"`
+	UserID      *int64    `json:"user_id"`
+	CourseID    *int64    `json:"course_id"`
+	AmountCents int64     `json:"amount_cents"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type CourseMember struct {
+	ID       int64     `json:"id"`
+	UserID   *int64    `json:"user_id"`
+	CourseID *int64    `json:"course_id"`
+	JoinedAt time.Time `json:"joined_at"`
+}

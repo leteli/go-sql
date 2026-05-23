@@ -4,9 +4,36 @@
 
 package coursesdb
 
+import (
+	"database/sql"
+)
+
 type Course struct {
 	ID    int64  `json:"id"`
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
 	Price int64  `json:"price"`
+}
+
+type CourseMember struct {
+	ID       int64         `json:"id"`
+	UserID   sql.NullInt64 `json:"user_id"`
+	CourseID sql.NullInt64 `json:"course_id"`
+	JoinedAt sql.NullTime  `json:"joined_at"`
+}
+
+type Order struct {
+	ID          int64         `json:"id"`
+	UserID      sql.NullInt64 `json:"user_id"`
+	CourseID    sql.NullInt64 `json:"course_id"`
+	AmountCents int64         `json:"amount_cents"`
+	CreatedAt   sql.NullTime  `json:"created_at"`
+}
+
+type User struct {
+	ID        int64          `json:"id"`
+	Email     string         `json:"email"`
+	Name      sql.NullString `json:"name"`
+	Age       sql.NullInt64  `json:"age"`
+	CreatedAt sql.NullTime   `json:"created_at"`
 }

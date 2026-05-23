@@ -1,7 +1,7 @@
 version: "2"
 sql:
   - engine: "sqlite"
-    schema: "migrations/courses/*.up.sql"
+    schema: "migrations/*.up.sql"
     queries: "query/courses"
     gen:
       go:
@@ -11,7 +11,7 @@ sql:
         emit_json_tags: true
         emit_interface: true
   - engine: "sqlite"
-    schema: "migrations/users/*.up.sql"
+    schema: "migrations/*.up.sql"
     queries: "query/users"
     gen:
       go:
@@ -20,4 +20,27 @@ sql:
         emit_prepared_queries: true
         emit_json_tags: true
         emit_interface: true
-
+  - engine: "sqlite"
+    schema: "migrations/*.up.sql"
+    queries: "query/course_members"
+    gen:
+      go:
+        package: "coursemembersdb"
+        out: "internal/db/course_members"
+        emit_prepared_queries: true
+        emit_json_tags: true
+        emit_interface: true
+        overrides:
+          - column: "course_members.members"
+            go_type:
+              type: "Members"
+  - engine: "sqlite"
+    schema: "migrations/*.up.sql"
+    queries: "query/orders"
+    gen:
+      go:
+        package: "ordersdb"
+        out: "internal/db/orders"
+        emit_prepared_queries: true
+        emit_json_tags: true
+        emit_interface: true
